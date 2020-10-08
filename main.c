@@ -12,18 +12,19 @@ MODULE_AUTHOR("Jack Dickinson");    ///< The author -- visible when you use modi
 MODULE_DESCRIPTION("A simple Linux char driver for the BBB");  ///< The description -- see modinfo
 MODULE_VERSION("0.1");            ///< A version number to inform users
  
-static int    majorNumber;                  ///< Stores the device number -- determined automatically
-static char   message[256] = {0};           ///< Memory for the string that is passed from userspace
+static int   majorNumber;     
+static int majorNum;                ///< Stores the device number -- determined automatically
+static char*   device_buffer;                ///< Memory for the string that is passed from userspace
 static short  size_of_message;              ///< Used to remember the size of the string stored
 static int    numberOpens = 0;              ///< Counts the number of times the device is opened
 static struct class*  ebbcharClass  = NULL; ///< The device-driver class struct pointer
 static struct device* ebbcharDevice = NULL; ///< The device-driver device struct pointer
  
 // The prototype functions for the character driver -- must come before the struct definition
-static int     dev_open(struct inode *, struct file *);
-static int     dev_release(struct inode *, struct file *);
-static ssize_t dev_read(struct file *, char *, size_t, loff_t *);
-static ssize_t dev_write(struct file *, const char *, size_t, loff_t *);
+static int     my_open(struct inode *, struct file *);
+static int     my_close(struct inode *, struct file *);
+static ssize_t my_read(struct file *, char *, size_t, loff_t *);
+static ssize_t my_write(struct file *, const char *, size_t, loff_t *);
  
 /** @brief Devices are represented as file structure in the kernel. The file_operations structure from
  *  /linux/fs.h lists the callback functions that you wish to associated with your file operations
@@ -31,10 +32,10 @@ static ssize_t dev_write(struct file *, const char *, size_t, loff_t *);
  */
 static struct file_operations fops =
 {
-   .open = dev_open,
-   .read = dev_read,
-   .write = dev_write,
-   .release = dev_release,
+   .open = my_open,
+   .read = my_read,
+   .write = my_write,
+   .release = my_close,
 };
  
 /** @brief The LKM initialization function
@@ -43,48 +44,50 @@ static struct file_operations fops =
  *  time and that it can be discarded and its memory freed up after that point.
  *  @return returns 0 if successful
  */
-static int __init ebbchar_init(void){
-   printk(KERN_INFO "EBBChar: Initializing the EBBChar LKM\n");
+static int main_device_init(void){
+   printk(KERN_INFO "Main device: Initializing the main_device LKM\n");
  
    // Try to dynamically allocate a major number for the device -- more difficult but worth it
    majorNumber = register_chrdev(0, DEVICE_NAME, &fops);
    if (majorNumber<0){
-      printk(KERN_ALERT "EBBChar failed to register a major number\n");
+      printk(KERN_ALERT "Main device failed to register a major number\n");
       return majorNumber;
    }
-   printk(KERN_INFO "EBBChar: registered correctly with major number %d\n", majorNumber);
  
-   // Register the device class
-   ebbcharClass = class_create(THIS_MODULE, CLASS_NAME);
-   if (IS_ERR(ebbcharClass)){                // Check for error and clean up if there is
-      unregister_chrdev(majorNumber, DEVICE_NAME);
-      printk(KERN_ALERT "Failed to register device class\n");
-      return PTR_ERR(ebbcharClass);          // Correct way to return an error on a pointer
-   }
-   printk(KERN_INFO "EBBChar: device class registered correctly\n");
+   
+   printk(KERN_INFO "Main device: registered correctly with major number %d\n", majorNumber);
  
-   // Register the device driver
-   ebbcharDevice = device_create(ebbcharClass, NULL, MKDEV(majorNumber, 0), NULL, DEVICE_NAME);
-   if (IS_ERR(ebbcharDevice)){               // Clean up if there is an error
-      class_destroy(ebbcharClass);           // Repeated code but the alternative is goto statements
-      unregister_chrdev(majorNumber, DEVICE_NAME);
-      printk(KERN_ALERT "Failed to create the device\n");
-      return PTR_ERR(ebbcharDevice);
-   }
-   printk(KERN_INFO "EBBChar: device class created correctly\n"); // Made it! device was initialized
-   return 0;
+    device_buffer = kmalloc(1, GFP_KERNEL);
+ 
+ if (!device_buffer)
+ {
+   majorNumber = -ENOMEN;
+   goto fail;
+ }
+ 
+ memset(device_buffer, 0, 1);
+ 
+ 
+    printk("<1>Inserting memory module\n");
+    return 0;
+   
+   
+   fail: 
+     main_device_exit();
+     return majorNumber;
 }
  
 /** @brief The LKM cleanup function
  *  Similar to the initialization function, it is static. The __exit macro notifies that if this
  *  code is used for a built-in driver (not a LKM) that this function is not required.
  */
-static void __exit ebbchar_exit(void){
-   device_destroy(ebbcharClass, MKDEV(majorNumber, 0));     // remove the device
-   class_unregister(ebbcharClass);                          // unregister the device class
-   class_destroy(ebbcharClass);                             // remove the device class
-   unregister_chrdev(majorNumber, DEVICE_NAME);             // unregister the major number
-   printk(KERN_INFO "EBBChar: Goodbye from the LKM!\n");
+static void main_device_exit(void){
+   unregister_chrdev(majorNum, DEVICE_NAME);
+      if(device_buffer)
+      {
+       kfree(device_buffer);
+      }
+   printk(KERN_INFO "Main device: Goodbye from the LKM!\n");
 }
  
 /** @brief The device open function that is called each time the device is opened
@@ -92,9 +95,9 @@ static void __exit ebbchar_exit(void){
  *  @param inodep A pointer to an inode object (defined in linux/fs.h)
  *  @param filep A pointer to a file object (defined in linux/fs.h)
  */
-static int dev_open(struct inode *inodep, struct file *filep){
+static int my_open(struct inode *inodep, struct file *filep){
    numberOpens++;
-   printk(KERN_INFO "EBBChar: Device has been opened %d time(s)\n", numberOpens);
+   printk(KERN_INFO "Main Device: Device has been opened %d time(s)\n", numberOpens);
    return 0;
 }
  
@@ -106,17 +109,16 @@ static int dev_open(struct inode *inodep, struct file *filep){
  *  @param len The length of the b
  *  @param offset The offset if required
  */
-static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *offset){
+static ssize_t my_read(struct file *filep, char *buffer, size_t len, loff_t *offset){
    int error_count = 0;
-   // copy_to_user has the format ( * to, *from, size) and returns 0 on success
-   error_count = copy_to_user(buffer, message, size_of_message);
+   error_count = copy_to_user(buffer, device_buffer, size_of_message);
  
    if (error_count==0){            // if true then have success
-      printk(KERN_INFO "EBBChar: Sent %d characters to the user\n", size_of_message);
+      printk(KERN_INFO "Main device: Sent %d characters to the user\n", size_of_message);
       return (size_of_message=0);  // clear the position to the start and return 0
    }
    else {
-      printk(KERN_INFO "EBBChar: Failed to send %d characters to the user\n", error_count);
+      printk(KERN_INFO "Main Device: Failed to send %d characters to the user\n", error_count);
       return -EFAULT;              // Failed -- return a bad address message (i.e. -14)
    }
 }
@@ -129,10 +131,10 @@ static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *of
  *  @param len The length of the array of data that is being passed in the const char buffer
  *  @param offset The offset if required
  */
-static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, loff_t *offset){
-   sprintf(message, "%s(%zu letters)", buffer, len);   // appending received string with its length
-   size_of_message = strlen(message);                 // store the length of the stored message
-   printk(KERN_INFO "EBBChar: Received %zu characters from the user\n", len);
+static ssize_t my_write(struct file *filep, const char *buffer, size_t len, loff_t *offset){
+   sprintf(device_buffer, "%s(%zu letters)", buffer, len);   // appending received string with its length
+   size_of_message = strlen(device_buffer);                 // store the length of the stored message
+   printk(KERN_INFO "Main Device: Received %zu characters from the user\n", len);
    return len;
 }
  
@@ -141,8 +143,8 @@ static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, lof
  *  @param inodep A pointer to an inode object (defined in linux/fs.h)
  *  @param filep A pointer to a file object (defined in linux/fs.h)
  */
-static int dev_release(struct inode *inodep, struct file *filep){
-   printk(KERN_INFO "EBBChar: Device successfully closed\n");
+static int my_close(struct inode *inodep, struct file *filep){
+   printk(KERN_INFO "Main device: Device successfully closed\n");
    return 0;
 }
  
@@ -150,5 +152,5 @@ static int dev_release(struct inode *inodep, struct file *filep){
  *  identify the initialization function at insertion time and the cleanup function (as
  *  listed above)
  */
-module_init(ebbchar_init);
-module_exit(ebbchar_exit);
+module_init(main_device_init);
+module_exit(main_device_exit);
