@@ -3,34 +3,39 @@
 #include <linux/device.h>         // Header to support the kernel Driver Model
 #include <linux/kernel.h>         // Contains types, macros, functions for the kernel
 #include <linux/fs.h>             // Header for the Linux file system support
-#include <linux/uaccess.h>          // Required for the copy to user function
-#define  DEVICE_NAME "main_device"    
-#define  CLASS_NAME  "ebb"        
+#include <linux/uaccess.h>
+#include <linux/slab.h>
+#include <linux/errno.h>
+#include <linux/types.h>
+#include <linux/proc_fs.h>
+#include <linux/fcntl.h>          // Required for the copy to user function
+#define  DEVICE_NAME "main_device"            
  
 MODULE_LICENSE("GPL");            ///< The license type -- this affects available functionality
 MODULE_AUTHOR("Jack Dickinson");    ///< The author -- visible when you use modinfo
 MODULE_DESCRIPTION("A simple Linux char driver for the BBB");  ///< The description -- see modinfo
 MODULE_VERSION("0.1");            ///< A version number to inform users
  
-static int   majorNumber;     
-static int majorNum;                ///< Stores the device number -- determined automatically
-static char*   device_buffer;                ///< Memory for the string that is passed from userspace
-static short  size_of_message;              ///< Used to remember the size of the string stored
-static int    numberOpens = 0;              ///< Counts the number of times the device is opened
-static struct class*  ebbcharClass  = NULL; ///< The device-driver class struct pointer
-static struct device* ebbcharDevice = NULL; ///< The device-driver device struct pointer
+int   majorNumber;     
+int majorNum = 473;                ///< Stores the device number -- determined automatically
+char*   device_buffer;                ///< Memory for the string that is passed from userspace
+short  size_of_message;              ///< Used to remember the size of the string stored
+int    numberOpens = 0;              ///< Counts the number of times the device is opened
+ ///< The device-driver class struct pointer
+ ///< The device-driver device struct pointer
  
 // The prototype functions for the character driver -- must come before the struct definition
-static int     my_open(struct inode *, struct file *);
-static int     my_close(struct inode *, struct file *);
-static ssize_t my_read(struct file *, char *, size_t, loff_t *);
-static ssize_t my_write(struct file *, const char *, size_t, loff_t *);
- 
+ int     my_open(struct inode *, struct file *);
+ int     my_close(struct inode *, struct file *);
+ ssize_t my_read(struct file *, char *, size_t, loff_t *);
+ ssize_t my_write(struct file *, const char *, size_t, loff_t *);
+ int main_device_init(void);
+ void main_device_exit(void); 
 /** @brief Devices are represented as file structure in the kernel. The file_operations structure from
  *  /linux/fs.h lists the callback functions that you wish to associated with your file operations
  *  using a C99 syntax structure. char devices usually implement open, read, write and release calls
  */
-static struct file_operations fops =
+ struct file_operations fops =
 {
    .open = my_open,
    .read = my_read,
@@ -44,11 +49,11 @@ static struct file_operations fops =
  *  time and that it can be discarded and its memory freed up after that point.
  *  @return returns 0 if successful
  */
-static int main_device_init(void){
+ int main_device_init(void){
    printk(KERN_INFO "Main device: Initializing the main_device LKM\n");
  
    // Try to dynamically allocate a major number for the device -- more difficult but worth it
-   majorNumber = register_chrdev(0, DEVICE_NAME, &fops);
+   majorNumber = register_chrdev(majorNum, DEVICE_NAME, &fops);
    if (majorNumber<0){
       printk(KERN_ALERT "Main device failed to register a major number\n");
       return majorNumber;
@@ -61,7 +66,7 @@ static int main_device_init(void){
  
  if (!device_buffer)
  {
-   majorNumber = -ENOMEN;
+   majorNumber = -ENOMEM;
    goto fail;
  }
  
@@ -81,7 +86,7 @@ static int main_device_init(void){
  *  Similar to the initialization function, it is static. The __exit macro notifies that if this
  *  code is used for a built-in driver (not a LKM) that this function is not required.
  */
-static void main_device_exit(void){
+ void main_device_exit(void){
    unregister_chrdev(majorNum, DEVICE_NAME);
       if(device_buffer)
       {
@@ -95,7 +100,7 @@ static void main_device_exit(void){
  *  @param inodep A pointer to an inode object (defined in linux/fs.h)
  *  @param filep A pointer to a file object (defined in linux/fs.h)
  */
-static int my_open(struct inode *inodep, struct file *filep){
+ int my_open(struct inode *inodep, struct file *filep){
    numberOpens++;
    printk(KERN_INFO "Main Device: Device has been opened %d time(s)\n", numberOpens);
    return 0;
@@ -109,7 +114,7 @@ static int my_open(struct inode *inodep, struct file *filep){
  *  @param len The length of the b
  *  @param offset The offset if required
  */
-static ssize_t my_read(struct file *filep, char *buffer, size_t len, loff_t *offset){
+ ssize_t my_read(struct file *filep, char *buffer, size_t len, loff_t *offset){
    int error_count = 0;
    error_count = copy_to_user(buffer, device_buffer, size_of_message);
  
@@ -131,7 +136,7 @@ static ssize_t my_read(struct file *filep, char *buffer, size_t len, loff_t *off
  *  @param len The length of the array of data that is being passed in the const char buffer
  *  @param offset The offset if required
  */
-static ssize_t my_write(struct file *filep, const char *buffer, size_t len, loff_t *offset){
+ ssize_t my_write(struct file *filep, const char *buffer, size_t len, loff_t *offset){
    sprintf(device_buffer, "%s(%zu letters)", buffer, len);   // appending received string with its length
    size_of_message = strlen(device_buffer);                 // store the length of the stored message
    printk(KERN_INFO "Main Device: Received %zu characters from the user\n", len);
@@ -143,7 +148,7 @@ static ssize_t my_write(struct file *filep, const char *buffer, size_t len, loff
  *  @param inodep A pointer to an inode object (defined in linux/fs.h)
  *  @param filep A pointer to a file object (defined in linux/fs.h)
  */
-static int my_close(struct inode *inodep, struct file *filep){
+ int my_close(struct inode *inodep, struct file *filep){
    printk(KERN_INFO "Main device: Device successfully closed\n");
    return 0;
 }
