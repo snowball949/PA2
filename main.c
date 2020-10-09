@@ -20,10 +20,8 @@ MODULE_AUTHOR("Jack Dickinson");
  
 int   majorNumber;     
 int majorNum = 473;                
-char*   device_buffer;                
-short  messageSize;              
-int    numberOpens = 0;              
-char message[BUFFER_SIZE];
+char*   device_buffer;            
+int    numberOpens = 0;
  
  
 
@@ -47,7 +45,7 @@ char message[BUFFER_SIZE];
 
  int main_device_init(void)
  {
-   printk(KERN_INFO "Main device: Initializing the main_device LKM\n");
+   printk(KERN_INFO "Main device: Initializing the main_device\n");
  
    
    majorNumber = register_chrdev(majorNum, DEVICE_NAME, &fops);
@@ -57,7 +55,7 @@ char message[BUFFER_SIZE];
    }
  
    
-   printk(KERN_INFO "Main device: registered correctly with major number %d\n", majorNumber);
+   printk(KERN_INFO "Main device: registered correctly with major number %d\n", majorNum);
  
     device_buffer = kmalloc(BUFFER_SIZE, GFP_KERNEL);
  
@@ -81,7 +79,7 @@ char message[BUFFER_SIZE];
       {
        kfree(device_buffer);
       }
-   printk(KERN_INFO "Main device: Goodbye from the LKM!\n");
+   printk(KERN_INFO "Main device: Goodbye\n");
 }
  
 
