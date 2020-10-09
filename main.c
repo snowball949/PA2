@@ -21,19 +21,19 @@ MODULE_AUTHOR("Jack Dickinson");
 int   majorNumber;     
 int majorNum = 473;                
 char*   device_buffer;                
-short  size_of_message;              
+short  messageSize;              
 int    numberOpens = 0;              
-
+char message[BUFFER_SIZE];
  
  
 
  int     my_open(struct inode *, struct file *);
  int     my_close(struct inode *, struct file *);
- ssize_t my_read(struct file *, char *, size_t, loff_t *);
- ssize_t my_write(struct file *, const char *, size_t, loff_t *);
+ ssize_t my_read(struct file *, char __user *, size_t, loff_t *);
+ ssize_t my_write(struct file *, const char __user *, size_t, loff_t *);
  int main_device_init(void);
  void main_device_exit(void); 
- loff_t my_seek(struct file*, loff_t, int)
+ loff_t my_seek(struct file*, loff_t, int);
 
  struct file_operations fops =
 {
@@ -41,7 +41,7 @@ int    numberOpens = 0;
    .read = my_read,
    .write = my_write,
    .release = my_close,
-   .llseak = my_seek,
+   .llseek = my_seek,
 };
  
 
@@ -64,19 +64,13 @@ int    numberOpens = 0;
  if (!device_buffer)
  {
    majorNumber = -ENOMEM;
-   goto fail;
+   return majorNumber;
  }
- 
- memset(device_buffer, 0, 1);
  
  
     printk("<1>Inserting memory module\n");
     return 0;
-   
-   
-   fail: 
-     main_device_exit();
-     return majorNumber;
+  
 }
  
 
@@ -102,10 +96,18 @@ int    numberOpens = 0;
  ssize_t my_read(struct file *filep, char __user *buffer, size_t len, loff_t *offset)
  {
    int error_count = 0;
+   if (len > BUFFER_SIZE)
+    {
+       printk("%zu", len);
+       printk("read overflow");
+       return -EFAULT;
+    } 
    error_count = copy_to_user(buffer, device_buffer, len);
- 
+    
    if (error_count==0){            
-      printk(KERN_INFO "Main device: Sent %d characters to the user\n", size_of_message);
+      offset = offset + len;
+      printk(KERN_INFO "Main device: Sent %d characters to the user\n", len);
+      
       return 0;  
    }
    else {
@@ -120,12 +122,22 @@ int    numberOpens = 0;
 
  ssize_t my_write(struct file *filep, const char __user *buffer, size_t len, loff_t *offset)
  {
-   sprintf(device_buffer, "%s(%zu letters)", buffer, len);
     int checker = 0;
+     if (len > BUFFER_SIZE)
+  {
+    printk("Too big to write\n");
+    printk("device buffer is: %p", (void *)device_buffer);
+    
+    printk("Current pos is: %lld", filep->f_pos);
+    return -1;
+  }
     checker = copy_from_user(device_buffer, buffer, len);
   if (checker == 0)
   {
+   offset = offset + len;
    printk(KERN_INFO "Main Device: Received %zu characters from the user\n", len);
+   printk("Current pos is: %lld", filep->f_pos);
+   printk("Offset is %lld", *offset);
    return len;
   }
   else
@@ -139,11 +151,11 @@ int    numberOpens = 0;
    return 0;
  }
 
-loff_t my_seek(struct file*filep, loff_t offset, int whence)
+loff_t my_seek(struct file* filep, loff_t offset, int whence)
 {
  
- loff_t newpos = lseek(filep, offset,;
-  switch (whence):
+ loff_t newpos;
+  switch (whence)
  {
   case 0: 
    newpos = offset;
@@ -159,18 +171,20 @@ loff_t my_seek(struct file*filep, loff_t offset, int whence)
   default:
    return -EINVAL;
  }
-                       
+           printk("Offset is %lld", offset);
+
+        
  if (newpos<0)
   {
            return -EINVAL;
   }
       filep->f_pos = newpos;
+      printk("Current p is %lld", filep->f_pos);
       return newpos;
-                       
-       
+
 }
 
- 
+
 
 module_init(main_device_init);
 module_exit(main_device_exit);
