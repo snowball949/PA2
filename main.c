@@ -11,6 +11,9 @@
 #include <linux/fcntl.h>          
 #define  DEVICE_NAME "main_device"            
  
+#define BUFFER_SIZE 1024
+
+
 MODULE_LICENSE("GPL");           
 MODULE_AUTHOR("Jack Dickinson");    
          
@@ -56,7 +59,7 @@ int    numberOpens = 0;
    
    printk(KERN_INFO "Main device: registered correctly with major number %d\n", majorNumber);
  
-    device_buffer = kmalloc(1, GFP_KERNEL);
+    device_buffer = kmalloc(BUFFER_SIZE, GFP_KERNEL);
  
  if (!device_buffer)
  {
@@ -79,7 +82,7 @@ int    numberOpens = 0;
 
  void main_device_exit(void)
  {
-   unregister_chrdev(majorNum, DEVICE_NAME);
+     unregister_chrdev(majorNum, DEVICE_NAME);
       if(device_buffer)
       {
        kfree(device_buffer);
@@ -96,18 +99,18 @@ int    numberOpens = 0;
 }
  
 
- ssize_t my_read(struct file *filep, char *buffer, size_t len, loff_t *offset)
+ ssize_t my_read(struct file *filep, char __user *buffer, size_t len, loff_t *offset)
  {
    int error_count = 0;
-   error_count = copy_to_user(buffer, device_buffer, size_of_message);
+   error_count = copy_to_user(buffer, device_buffer, len);
  
    if (error_count==0){            
       printk(KERN_INFO "Main device: Sent %d characters to the user\n", size_of_message);
-      return (size_of_message=0);  
+      return 0;  
    }
    else {
       printk(KERN_INFO "Main Device: Failed to send %d characters to the user\n", error_count);
-      return -EFAULT;              
+      return -EFAULT;             
    }
 }
 
@@ -115,12 +118,18 @@ int    numberOpens = 0;
  
 
 
- ssize_t my_write(struct file *filep, const char *buffer, size_t len, loff_t *offset)
+ ssize_t my_write(struct file *filep, const char __user *buffer, size_t len, loff_t *offset)
  {
-   sprintf(device_buffer, "%s(%zu letters)", buffer, len);   
-   size_of_message = strlen(device_buffer);                 
+   sprintf(device_buffer, "%s(%zu letters)", buffer, len);
+    int checker = 0;
+    checker = copy_from_user(device_buffer, buffer, len);
+  if (checker == 0)
+  {
    printk(KERN_INFO "Main Device: Received %zu characters from the user\n", len);
    return len;
+  }
+  else
+   return -EFAULT;
 }
  
 
@@ -137,15 +146,15 @@ loff_t my_seek(struct file*filep, loff_t offset, int whence)
   switch (whence):
  {
   case 0: 
-   newpos = lseek(filep, offset, SEEK_SET);
+   newpos = offset;
    break;
   
   case 1:
-   newpos = lseek(filep, offset, SEEK_CUR);
+   newpos = filep->f_pos + offset;
    break;
   
   case 2:
-   newpos = lseek(filep, offset, SEEK_END);
+   newpos = sizeof(filep) + offset;
   
   default:
    return -EINVAL;
