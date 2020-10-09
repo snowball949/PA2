@@ -6,8 +6,13 @@
 #include<unistd.h>
  
 #define BUFFER_LENGTH 256               ///< The buffer length (crude but fine)
-static char receive[BUFFER_LENGTH];     ///< The receive buffer from the LKM
- 
+ char receive[BUFFER_LENGTH];     ///< The receive buffer from the LKM
+ char option;
+ int bytes;
+ string userS;
+ off_t offset;
+ int whence;
+  
 int main(){
    int ret, fd;
    char stringToSend[BUFFER_LENGTH];
@@ -17,25 +22,59 @@ int main(){
       perror("Failed to open the device...");
       return errno;
    }
-   printf("Type in a short string to send to the kernel module:\n");
-   scanf("%[^\n]%*c", stringToSend);                // Read in a string (with spaces)
-   printf("Writing message to the device [%s].\n", stringToSend);
-   ret = write(fd, stringToSend, strlen(stringToSend)); // Send the string to the LKM
-   if (ret < 0){
-      perror("Failed to write the message to the device.");
-      return errno;
-   }
- 
-   printf("Press ENTER to read back from the device...\n");
-   getchar();
- 
-   printf("Reading from the device...\n");
-   ret = read(fd, receive, BUFFER_LENGTH);        // Read the response from the LKM
-   if (ret < 0){
-      perror("Failed to read the message from the device.");
-      return errno;
-   }
-   printf("The received message is: [%s]\n", receive);
-   printf("End of the program\n");
-   return 0;
+ while (option != 'e')
+ {
+  printf("Enter 'r' to tell the program to read a certain number of bytes.\n");
+  printf("Enter 'w' to enter data you want to write.\n");
+  printf("Enter 's' to alter second and thrid parameters.\n);
+  printf("Enter 'e' to exit the program.\n);
+  option = getchar();
+  if (option == 'r')
+         {
+           printf("Enter the number of bytes you want to read:\n ");
+           scanf("%d", bytes);
+           ret = read(fd, receive, bytes);
+           if (ret < 0)
+           {
+            printf("Failed to read file");
+            return errno;
+           }
+          printf("You have read [%s]", receive);
+         }
+   else if (option == 'w')
+         {
+          printf("Enter the data you want to write:\n ");
+          scanf("%s", userS);
+          ret = write(fd, userS, strlen(userS));
+          if (ret < 0)
+          {
+           printf("Failed to write to file");
+           return errno;
+          }
+         }
+    else if (option == 's')
+         {
+          printf("Enter an offset: \n");
+          scanf("%lld", offset);
+          printf("Enter a whence: \n");
+          scanf("%d", whence);
+          ret = lseek(fd, offset, whence);
+          if (ret < 0)
+          {
+           printf("Failed to seek\n");
+           return errno;
+          }
+         }
+         else if (option == 'e')
+         {
+          printf("You have quit the program");
+          return 0;
+         }
+         else
+         {
+          printf("Please type in a correct selection.\n");
+         }
+ }
+   
+  
 }
